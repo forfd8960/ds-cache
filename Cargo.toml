@@ -4,3 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+tokio = { version = "1.47.1", features = ["full"] }
+redis-protocol = "6.0.0"
+bytes = "1.10.1"
+anyhow = "1.0.99"
+bincode = "2.0.1"
+serde = { version = "1", features = ["derive"] }
+clap = {version = "1", features = ["derive"] }
+tracing = "0.1.41"
+tracing-subscriber = "0.3.20"
