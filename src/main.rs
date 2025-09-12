@@ -7,7 +7,7 @@ mod storage; // data store
 mod utils; // util functions.
 
 use anyhow::{Result, anyhow};
-use network::handle_conn;
+use network::handle_conn1;
 use tokio::net::TcpListener;
 
 #[tokio::main]
@@ -25,9 +25,11 @@ async fn main() -> Result<()> {
         match listener.accept().await {
             Ok((mut sock, client_addr)) => {
                 println!("accept conn from: {}", client_addr);
+
                 tokio::spawn(async move {
-                    if let Err(e) = handle_conn(&mut sock).await {
-                        eprintln!("Failed to handle conn from: {}, {}", client_addr, e);
+                    match handle_conn1(&mut sock).await {
+                        Ok(f) => println!("success read frame: {:?}", f),
+                        Err(e) => eprintln!("Failed to handle conn from: {}, {}", client_addr, e),
                     }
                 });
             }
