@@ -6,6 +6,32 @@ mod protocol; // redis protocol decode and encode.
 mod storage; // data store
 mod utils; // util functions.
 
-fn main() {
-    println!("A Redis Server build with Rust");
+use anyhow::{Result, anyhow};
+use network::handle_conn;
+use tokio::net::TcpListener;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    println!("A Redis Server Build with Rust");
+
+    let addr = "0.0.0.0:6869";
+    let listener = TcpListener::bind(addr)
+        .await
+        .map_err(|e| anyhow!("Faile to listen on {}: {}", addr, e))?;
+
+    println!("server listen on: {}", addr);
+
+    loop {
+        match listener.accept().await {
+            Ok((mut sock, client_addr)) => {
+                println!("accept conn from: {}", client_addr);
+                tokio::spawn(async move {
+                    if let Err(e) = handle_conn(&mut sock).await {
+                        eprintln!("Failed to handle conn from: {}, {}", client_addr, e);
+                    }
+                });
+            }
+            Err(e) => eprintln!("Faield to accept conn: {}", e),
+        }
+    }
 }
