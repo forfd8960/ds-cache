@@ -5,7 +5,7 @@ use redis_protocol::resp2::types::OwnedFrame as Frame;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
-pub async fn handle_conn1(socket: &mut TcpStream) -> Result<Option<Frame>> {
+pub async fn handle_conn(socket: &mut TcpStream) -> Result<Option<Frame>> {
     let mut framed = Framed::new(socket, Resp2::default());
 
     match framed.next().await {
