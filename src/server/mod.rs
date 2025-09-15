@@ -1,10 +1,15 @@
 use anyhow::{Result, anyhow};
-use redis_protocol::resp2::types::OwnedFrame as Frame;
+use futures::{SinkExt, StreamExt};
+use redis_protocol::codec::Resp2;
 use std::sync::Arc;
+use tokio::io;
 use tokio::{net::TcpListener, sync::Mutex};
+use tokio_util::codec::{FramedRead, FramedWrite};
 
 use crate::commands::Command;
-use crate::{config::CacheConfig, network::handle_conn, storage::CacheStore};
+use crate::commands::handlers::CmdHandler;
+use crate::protocol::encode::{encode_error, encode_value};
+use crate::{config::CacheConfig, storage::CacheStore};
 
 #[derive(Debug)]
 pub struct Server {
@@ -30,22 +35,51 @@ impl Server {
 
         loop {
             match listener.accept().await {
-                Ok((mut sock, client_addr)) => {
+                Ok((mut socket, client_addr)) => {
                     println!("accept conn from: {}", client_addr);
 
+                    let store = Arc::clone(&self.store);
+
                     tokio::spawn(async move {
-                        match handle_conn(&mut sock).await {
-                            Ok(f) => {
-                                println!("success read frame: {:?}", f);
-                                if let Some(frame) = f {
-                                    let cmd = Command::from(frame);
-                                } else {
-                                    println!("empty frame: {:?}", f);
+                        // Split the socket into read and write halves
+                        let (reader, writer) = io::split(socket);
+
+                        // Create framed reader and writer with Resp2Codec
+                        let mut framed_read = FramedRead::new(reader, Resp2::default());
+
+                        let mut framed_write = FramedWrite::new(writer, Resp2::default());
+
+                        match framed_read.next().await {
+                            Some(frame_res) => match frame_res {
+                                Ok(ref frame) => {
+                                    println!("read frame from framed: {:?}", frame_res);
+                                    let owned_frame = frame.to_owned_frame();
+
+                                    let cmd = Command::from(owned_frame);
+                                    let mut store = store.lock().await;
+
+                                    let entry_res = CmdHandler::handle_cmd(cmd, &mut store);
+
+                                    let encode_frame = match entry_res {
+                                        Ok(res) => encode_value(res.value),
+                                        Err(e) => encode_error(e.to_string()),
+                                    };
+
+                                    if let Ok(write_frame) = encode_frame {
+                                        let _ = framed_write
+                                            .send(write_frame.into_bytes_frame())
+                                            .await
+                                            .map_err(|e| anyhow!("Failed to send response: {}", e));
+                                    } else {
+                                        eprintln!(
+                                            "failed to encode frame: {:?}",
+                                            encode_frame.err()
+                                        );
+                                    }
                                 }
-                            }
-                            Err(e) => {
-                                eprintln!("Failed to handle conn from: {}, {}", client_addr, e)
-                            }
+                                Err(e) => eprintln!("fail read frame: {:?}", e),
+                            },
+                            None => eprintln!("No frame"),
                         }
                     });
                 }
