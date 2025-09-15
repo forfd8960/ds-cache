@@ -1,3 +1,5 @@
+pub mod handlers;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     // Core Redis data type operations

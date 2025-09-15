@@ -2,6 +2,7 @@ use crate::commands::{Command, StringCommand};
 use anyhow::{Result, anyhow};
 use redis_protocol::resp2::types::OwnedFrame as Frame;
 
+pub mod encode;
 pub mod strings;
 
 fn extract_command_args(frame: Frame) -> Result<Vec<String>> {
