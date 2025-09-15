@@ -1,162 +1,229 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Value {
-    String(StringValue),
-    List(ListValue),
-    Set(SetValue),
-    SortedSet(SortedSetValue),
-    Hash(HashValue),
-}
+use super::{
+    HashEncoding, HashValue, ListEncoding, ListValue, OrderedFloat, SetEncoding, SetValue,
+    SortedSetEncoding, SortedSetValue, StringEncoding, StringValue, Value,
+};
 
-// ========== String Value ==========
-#[derive(Debug, Clone, PartialEq)]
-pub struct StringValue {
-    pub data: Vec<u8>, // Store as bytes to handle binary data
-    pub encoding: StringEncoding,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum StringEncoding {
-    Raw,    // Raw string/binary data
-    Int,    // Integer stored as string
-    Embstr, // Embedded string (short strings)
-}
-
-// ========== List Value ==========
-#[derive(Debug, Clone, PartialEq)]
-pub struct ListValue {
-    pub elements: Vec<Vec<u8>>, // List of byte arrays
-    pub encoding: ListEncoding,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ListEncoding {
-    Ziplist,    // Compressed list for small lists
-    LinkedList, // Standard doubly-linked list
-    Quicklist,  // Hybrid of ziplist and linkedlist
-}
-
-// ========== Set Value ==========
-#[derive(Debug, Clone, PartialEq)]
-pub struct SetValue {
-    pub members: HashSet<Vec<u8>>, // Set of byte arrays
-    pub encoding: SetEncoding,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SetEncoding {
-    HashTable, // Standard hash table
-    IntSet,    // Optimized for integer-only sets
-}
-
-// ========== Sorted Set Value ==========
-#[derive(Debug, Clone, PartialEq)]
-pub struct SortedSetValue {
-    // BTreeMap maintains sorted order by score
-    pub members: BTreeMap<OrderedFloat, Vec<u8>>,
-    // Reverse lookup: member -> score
-    pub member_scores: HashMap<Vec<u8>, OrderedFloat>,
-    pub encoding: SortedSetEncoding,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SortedSetEncoding {
-    Ziplist,  // Compressed for small sorted sets
-    SkipList, // Skip list + hash table for large sets
-}
-
-// Wrapper for f64 to make it Ord for BTreeMap
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct OrderedFloat(pub f64);
-
-impl Eq for OrderedFloat {}
-
-impl Ord for OrderedFloat {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
-    }
-}
-
-impl From<f64> for OrderedFloat {
-    fn from(f: f64) -> Self {
-        OrderedFloat(f)
-    }
-}
-
-// ========== Hash Value ==========
-#[derive(Debug, Clone, PartialEq)]
-pub struct HashValue {
-    pub fields: HashMap<Vec<u8>, Vec<u8>>, // field -> value mapping
-    pub encoding: HashEncoding,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum HashEncoding {
-    Ziplist,   // Compressed for small hashes
-    HashTable, // Standard hash table
-}
-
-use std::time::{Duration, Instant};
-
-#[derive(Debug, Clone)]
-pub struct Entry {
-    pub value: Value,
-    pub expires_at: Option<Instant>,
-    pub created_at: Instant,
-    pub last_accessed: Option<Instant>,
-}
-
-impl Entry {
-    pub fn new(value: Value) -> Self {
-        Self {
-            value,
-            expires_at: None,
-            created_at: Instant::now(),
-            last_accessed: None,
+impl Value {
+    // Convert to string representation
+    pub fn as_string(&self) -> Option<String> {
+        match self {
+            Value::String(s) => String::from_utf8(s.data.clone()).ok(),
+            _ => None,
         }
     }
 
-    pub fn with_expiration(value: Value, ttl: Duration) -> Self {
-        Self {
-            value,
-            expires_at: Some(Instant::now() + ttl),
-            created_at: Instant::now(),
-            last_accessed: None,
-        }
-    }
-
-    pub fn is_expired(&self) -> bool {
-        match self.expires_at {
-            Some(expires_at) => Instant::now() > expires_at,
-            None => false,
-        }
-    }
-
-    pub fn update_access_time(&mut self) {
-        self.last_accessed = Some(Instant::now());
-    }
-
-    pub fn set_expiration(&mut self, ttl: Duration) {
-        self.expires_at = Some(Instant::now() + ttl);
-    }
-
-    pub fn remove_expiration(&mut self) {
-        self.expires_at = None;
-    }
-
-    pub fn ttl(&self) -> Option<Duration> {
-        match self.expires_at {
-            Some(expires_at) => {
-                let now = Instant::now();
-                if expires_at > now {
-                    Some(expires_at - now)
-                } else {
-                    Some(Duration::ZERO) // Expired
-                }
+    // Get memory usage estimate
+    pub fn memory_usage(&self) -> usize {
+        match self {
+            Value::String(s) => s.data.len() + std::mem::size_of::<StringValue>(),
+            Value::List(l) => {
+                l.elements.iter().map(|e| e.len()).sum::<usize>() + std::mem::size_of::<ListValue>()
             }
-            None => None, // No expiration
+            Value::Set(s) => {
+                s.members.iter().map(|m| m.len()).sum::<usize>() + std::mem::size_of::<SetValue>()
+            }
+            Value::SortedSet(zs) => {
+                zs.members.iter().map(|(_, m)| m.len()).sum::<usize>()
+                    + std::mem::size_of::<SortedSetValue>()
+            }
+            Value::Hash(h) => {
+                h.fields
+                    .iter()
+                    .map(|(k, v)| k.len() + v.len())
+                    .sum::<usize>()
+                    + std::mem::size_of::<HashValue>()
+            }
         }
+    }
+
+    // Check if value is empty
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Value::String(s) => s.data.is_empty(),
+            Value::List(l) => l.elements.is_empty(),
+            Value::Set(s) => s.members.is_empty(),
+            Value::SortedSet(zs) => zs.members.is_empty(),
+            Value::Hash(h) => h.fields.is_empty(),
+        }
+    }
+}
+
+impl StringValue {
+    pub fn new<T: Into<Vec<u8>>>(data: T) -> Self {
+        let data = data.into();
+        let encoding = if data.len() <= 39 {
+            StringEncoding::Embstr
+        } else {
+            StringEncoding::Raw
+        };
+
+        Self { data, encoding }
+    }
+
+    pub fn from_int(value: i64) -> Self {
+        Self {
+            data: value.to_string().into_bytes(),
+            encoding: StringEncoding::Int,
+        }
+    }
+
+    pub fn as_str(&self) -> Result<&str, std::str::Utf8Error> {
+        std::str::from_utf8(&self.data)
+    }
+
+    pub fn as_int(&self) -> Option<i64> {
+        self.as_str().ok()?.parse().ok()
+    }
+
+    pub fn as_float(&self) -> Option<f64> {
+        self.as_str().ok()?.parse().ok()
+    }
+}
+
+impl ListValue {
+    pub fn new() -> Self {
+        Self {
+            elements: Vec::new(),
+            encoding: ListEncoding::Quicklist,
+        }
+    }
+
+    pub fn push_left<T: Into<Vec<u8>>>(&mut self, value: T) {
+        self.elements.insert(0, value.into());
+    }
+
+    pub fn push_right<T: Into<Vec<u8>>>(&mut self, value: T) {
+        self.elements.push(value.into());
+    }
+
+    pub fn pop_left(&mut self) -> Option<Vec<u8>> {
+        if !self.elements.is_empty() {
+            Some(self.elements.remove(0))
+        } else {
+            None
+        }
+    }
+
+    pub fn pop_right(&mut self) -> Option<Vec<u8>> {
+        self.elements.pop()
+    }
+
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+
+    pub fn get(&self, index: i64) -> Option<&Vec<u8>> {
+        let len = self.elements.len() as i64;
+        let actual_index = if index < 0 { len + index } else { index };
+
+        if actual_index >= 0 && actual_index < len {
+            self.elements.get(actual_index as usize)
+        } else {
+            None
+        }
+    }
+}
+
+impl SetValue {
+    pub fn new() -> Self {
+        Self {
+            members: HashSet::new(),
+            encoding: SetEncoding::HashTable,
+        }
+    }
+
+    pub fn add<T: Into<Vec<u8>>>(&mut self, member: T) -> bool {
+        self.members.insert(member.into())
+    }
+
+    pub fn remove(&mut self, member: &[u8]) -> bool {
+        self.members.remove(member)
+    }
+
+    pub fn contains(&self, member: &[u8]) -> bool {
+        self.members.contains(member)
+    }
+
+    pub fn len(&self) -> usize {
+        self.members.len()
+    }
+}
+
+impl SortedSetValue {
+    pub fn new() -> Self {
+        Self {
+            members: BTreeMap::new(),
+            member_scores: HashMap::new(),
+            encoding: SortedSetEncoding::SkipList,
+        }
+    }
+
+    pub fn add(&mut self, score: f64, member: Vec<u8>) -> bool {
+        let ordered_score = OrderedFloat(score);
+
+        // Remove existing member if it exists
+        if let Some(old_score) = self.member_scores.remove(&member) {
+            self.members.remove(&old_score);
+        }
+
+        self.members.insert(ordered_score, member.clone());
+        self.member_scores.insert(member, ordered_score);
+        true
+    }
+
+    pub fn remove(&mut self, member: &[u8]) -> bool {
+        if let Some(score) = self.member_scores.remove(member) {
+            self.members.remove(&score);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn score(&self, member: &[u8]) -> Option<f64> {
+        self.member_scores.get(member).map(|s| s.0)
+    }
+
+    pub fn len(&self) -> usize {
+        self.members.len()
+    }
+}
+
+impl HashValue {
+    pub fn new() -> Self {
+        Self {
+            fields: HashMap::new(),
+            encoding: HashEncoding::HashTable,
+        }
+    }
+
+    pub fn set<K: Into<Vec<u8>>, V: Into<Vec<u8>>>(&mut self, field: K, value: V) {
+        self.fields.insert(field.into(), value.into());
+    }
+
+    pub fn get(&self, field: &[u8]) -> Option<&Vec<u8>> {
+        self.fields.get(field)
+    }
+
+    pub fn remove(&mut self, field: &[u8]) -> bool {
+        self.fields.remove(field).is_some()
+    }
+
+    pub fn contains_field(&self, field: &[u8]) -> bool {
+        self.fields.contains_key(field)
+    }
+
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    pub fn keys(&self) -> Vec<&Vec<u8>> {
+        self.fields.keys().collect()
+    }
+
+    pub fn values(&self) -> Vec<&Vec<u8>> {
+        self.fields.values().collect()
     }
 }

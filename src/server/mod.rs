@@ -1,7 +1,9 @@
 use anyhow::{Result, anyhow};
+use redis_protocol::resp2::types::OwnedFrame as Frame;
 use std::sync::Arc;
 use tokio::{net::TcpListener, sync::Mutex};
 
+use crate::commands::Command;
 use crate::{config::CacheConfig, network::handle_conn, storage::CacheStore};
 
 #[derive(Debug)]
@@ -33,7 +35,14 @@ impl Server {
 
                     tokio::spawn(async move {
                         match handle_conn(&mut sock).await {
-                            Ok(f) => println!("success read frame: {:?}", f),
+                            Ok(f) => {
+                                println!("success read frame: {:?}", f);
+                                if let Some(frame) = f {
+                                    let cmd = Command::from(frame);
+                                } else {
+                                    println!("empty frame: {:?}", f);
+                                }
+                            }
                             Err(e) => {
                                 eprintln!("Failed to handle conn from: {}, {}", client_addr, e)
                             }
