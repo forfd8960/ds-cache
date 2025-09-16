@@ -58,23 +58,17 @@ impl Server {
                                     let cmd = Command::from(owned_frame);
                                     let mut store = store.lock().await;
 
-                                    let entry_res = CmdHandler::handle_cmd(cmd, &mut store);
+                                    println!("success parsed Command: {:?}", cmd);
 
-                                    let encode_frame = match entry_res {
-                                        Ok(res) => encode_value(res.value),
-                                        Err(e) => encode_error(e.to_string()),
-                                    };
+                                    let cmd_res = CmdHandler::handle_cmd(cmd, &mut store);
 
-                                    if let Ok(write_frame) = encode_frame {
+                                    if let Ok(write_frame) = cmd_res {
                                         let _ = framed_write
-                                            .send(write_frame.into_bytes_frame())
+                                            .send(write_frame)
                                             .await
                                             .map_err(|e| anyhow!("Failed to send response: {}", e));
                                     } else {
-                                        eprintln!(
-                                            "failed to encode frame: {:?}",
-                                            encode_frame.err()
-                                        );
+                                        eprintln!("failed to encode frame: {:?}", cmd_res.err());
                                     }
                                 }
                                 Err(e) => eprintln!("fail read frame: {:?}", e),

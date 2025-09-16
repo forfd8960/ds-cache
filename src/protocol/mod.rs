@@ -47,6 +47,8 @@ impl From<Frame> for Command {
 pub fn from_frame(frame: Frame) -> Result<Command> {
     let args = extract_command_args(frame)?;
 
+    println!("[from_frame] args: {:?}", args);
+
     if args.is_empty() {
         return Err(anyhow!("Empty command".to_string()));
     }
