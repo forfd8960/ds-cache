@@ -105,7 +105,7 @@ pub enum HashEncoding {
     HashTable, // Standard hash table
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CacheStore {
     data: HashMap<String, Entry>,
 }

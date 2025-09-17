@@ -91,12 +91,6 @@ pub enum StringCommand {
     },
 }
 
-// impl From<OwnedFrame> for StringCommand {
-//     fn from(value: OwnedFrame) -> Self {
-//         match value {}
-//     }
-// }
-
 // ========== List Commands ==========
 #[derive(Debug, Clone, PartialEq)]
 pub enum ListCommand {
