@@ -1,4 +1,6 @@
 pub mod handlers;
+pub mod list;
+pub mod string;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {

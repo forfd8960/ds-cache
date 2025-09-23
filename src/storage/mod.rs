@@ -156,6 +156,228 @@ impl CacheStore {
         self.data.insert(key, entry);
     }
 
+    pub fn lpush(&mut self, key: &str, values: Vec<String>) -> usize {
+        let list_value = match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => {
+                match &mut entry.value {
+                    Value::List(list) => list,
+                    _ => {
+                        // Key exists but is not a list - overwrite with new list
+                        let new_list = ListValue {
+                            elements: Vec::new(),
+                            encoding: ListEncoding::Quicklist,
+                        };
+                        entry.value = Value::List(new_list);
+                        match &mut entry.value {
+                            Value::List(list) => list,
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            }
+            Some(_) => {
+                // Key exists but is expired - remove it and create new list
+                self.data.remove(key);
+                let new_list = ListValue {
+                    elements: Vec::new(),
+                    encoding: ListEncoding::Quicklist,
+                };
+                let entry = Entry::new(Value::List(new_list));
+                self.data.insert(key.to_string(), entry);
+                match &mut self.data.get_mut(key).unwrap().value {
+                    Value::List(list) => list,
+                    _ => unreachable!(),
+                }
+            }
+            None => {
+                // Key does not exist - create new list
+                let new_list = ListValue {
+                    elements: Vec::new(),
+                    encoding: ListEncoding::Quicklist,
+                };
+                let entry = Entry::new(Value::List(new_list));
+                self.data.insert(key.to_string(), entry);
+                match &mut self.data.get_mut(key).unwrap().value {
+                    Value::List(list) => list,
+                    _ => unreachable!(),
+                }
+            }
+        };
+
+        // Prepend values to the list
+        for value in values.into_iter().rev() {
+            list_value.elements.insert(0, value.into_bytes());
+        }
+
+        list_value.elements.len()
+    }
+
+    pub fn rpush(&mut self, key: &str, values: Vec<String>) -> usize {
+        let list_value = match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => {
+                match &mut entry.value {
+                    Value::List(list) => list,
+                    _ => {
+                        // Key exists but is not a list - overwrite with new list
+                        let new_list = ListValue {
+                            elements: Vec::new(),
+                            encoding: ListEncoding::Quicklist,
+                        };
+                        entry.value = Value::List(new_list);
+                        match &mut entry.value {
+                            Value::List(list) => list,
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            }
+            Some(_) => {
+                // Key exists but is expired - remove it and create new list
+                self.data.remove(key);
+                let new_list = ListValue {
+                    elements: Vec::new(),
+                    encoding: ListEncoding::Quicklist,
+                };
+                let entry = Entry::new(Value::List(new_list));
+                self.data.insert(key.to_string(), entry);
+                match &mut self.data.get_mut(key).unwrap().value {
+                    Value::List(list) => list,
+                    _ => unreachable!(),
+                }
+            }
+            None => {
+                // Key does not exist - create new list
+                let new_list = ListValue {
+                    elements: Vec::new(),
+                    encoding: ListEncoding::Quicklist,
+                };
+                let entry = Entry::new(Value::List(new_list));
+                self.data.insert(key.to_string(), entry);
+                match &mut self.data.get_mut(key).unwrap().value {
+                    Value::List(list) => list,
+                    _ => unreachable!(),
+                }
+            }
+        };
+
+        // Append values to the list
+        for value in values {
+            list_value.elements.push(value.into_bytes());
+        }
+
+        list_value.elements.len()
+    }
+
+    pub fn lpop(&mut self, key: &str, count: u64) -> Option<Vec<Vec<u8>>> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &mut entry.value {
+                Value::List(list) => {
+                    let mut popped = Vec::new();
+                    for _ in 0..count {
+                        if let Some(value) = list.pop_left() {
+                            popped.push(value);
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if popped.is_empty() {
+                        None
+                    } else {
+                        Some(popped)
+                    }
+                }
+                _ => None, // Key exists but is not a list
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
+
+    pub fn rpop(&mut self, key: &str, count: u64) -> Option<Vec<Vec<u8>>> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &mut entry.value {
+                Value::List(list) => {
+                    let mut popped = Vec::new();
+                    for _ in 0..count {
+                        if let Some(value) = list.pop_right() {
+                            popped.push(value);
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if popped.is_empty() {
+                        None
+                    } else {
+                        Some(popped)
+                    }
+                }
+                _ => None, // Key exists but is not a list
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
+
+    pub fn llen(&mut self, key: &str) -> Option<usize> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::List(list) => Some(list.len()),
+                _ => None, // Key exists but is not a list
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
+
+    pub fn lrange(&mut self, key: &str, start: i64, stop: i64) -> Option<Vec<Vec<u8>>> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::List(list) => {
+                    let len = list.len() as i64;
+
+                    let start_idx = if start < 0 {
+                        (len + start).max(0)
+                    } else {
+                        start.min(len)
+                    } as usize;
+
+                    let stop_idx = if stop < 0 {
+                        (len + stop + 1).max(0)
+                    } else {
+                        (stop + 1).min(len)
+                    } as usize;
+
+                    if start_idx >= stop_idx || start_idx >= list.len() {
+                        return Some(vec![]);
+                    }
+
+                    Some(list.elements[start_idx..stop_idx].to_vec())
+                }
+                _ => None, // Key exists but is not a list
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
+
     // Set value with expiration
     pub fn set_with_expiration(&mut self, key: String, value: Value, ttl: Duration) {
         let entry = Entry::with_expiration(value, ttl);

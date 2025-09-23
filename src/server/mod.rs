@@ -6,6 +6,7 @@ use tokio::io;
 use tokio::sync::RwLock;
 use tokio::{net::TcpListener, sync::Mutex};
 use tokio_util::codec::{FramedRead, FramedWrite};
+use tracing::{info, warn};
 
 use crate::commands::Command;
 use crate::commands::handlers::CmdHandler;
@@ -36,7 +37,7 @@ impl Server {
         loop {
             match listener.accept().await {
                 Ok((socket, client_addr)) => {
-                    println!("accept conn from: {}", client_addr);
+                    info!("accept conn from: {}", client_addr);
 
                     let store = Arc::clone(&self.store);
 
@@ -49,35 +50,46 @@ impl Server {
 
                         let mut framed_write = FramedWrite::new(writer, Resp2::default());
 
-                        match framed_read.next().await {
-                            Some(frame_res) => match frame_res {
-                                Ok(ref frame) => {
-                                    println!("read frame from framed: {:?}", frame_res);
-                                    let owned_frame = frame.to_owned_frame();
+                        loop {
+                            match framed_read.next().await {
+                                Some(frame_res) => match frame_res {
+                                    Ok(ref frame) => {
+                                        info!("read frame from framed: {:?}", frame_res);
+                                        let owned_frame = frame.to_owned_frame();
 
-                                    let cmd = Command::from(owned_frame);
-                                    println!("success parsed Command: {:?}", cmd);
+                                        let cmd = Command::from(owned_frame);
+                                        info!("success parsed Command: {:?}", cmd);
 
-                                    let mut cmd_handler = CmdHandler::new(store);
+                                        let mut cmd_handler = CmdHandler::new(Arc::clone(&store));
 
-                                    let cmd_res = cmd_handler.handle_cmd(cmd).await;
+                                        let cmd_res = cmd_handler.handle_cmd(cmd).await;
 
-                                    if let Ok(write_frame) = cmd_res {
-                                        let _ = framed_write
-                                            .send(write_frame)
-                                            .await
-                                            .map_err(|e| anyhow!("Failed to send response: {}", e));
-                                    } else {
-                                        eprintln!("failed to encode frame: {:?}", cmd_res.err());
+                                        if let Ok(write_frame) = cmd_res {
+                                            let _ =
+                                                framed_write.send(write_frame).await.map_err(|e| {
+                                                    anyhow!("Failed to send response: {}", e)
+                                                });
+                                        } else {
+                                            eprintln!(
+                                                "failed to encode frame: {:?}",
+                                                cmd_res.err()
+                                            );
+                                        }
                                     }
+                                    Err(e) => {
+                                        warn!("fail read frame: {:?}", e);
+                                        break;
+                                    }
+                                },
+                                None => {
+                                    warn!("No frame");
+                                    break;
                                 }
-                                Err(e) => eprintln!("fail read frame: {:?}", e),
-                            },
-                            None => eprintln!("No frame"),
+                            }
                         }
                     });
                 }
-                Err(e) => eprintln!("Faield to accept conn: {}", e),
+                Err(e) => warn!("Faield to accept conn: {}", e),
             }
         }
     }

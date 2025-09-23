@@ -14,14 +14,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create framed stream with our RESP codec
     let mut framed = Framed::new(stream, Resp2::default());
 
-    send_cmd(&mut framed, "SET Hello 5").await?;
+    send_list_cmd(
+        &mut framed,
+        vec![
+            "LPUSH mylist world",
+            "LPUSH mylist hello",
+            "LLEN mylist",
+            "LPOP mylist",
+            "LRANGE mylist 0 -1",
+        ],
+    )
+    .await?;
 
-    send_cmd(&mut framed, "GET Hello").await?;
+    // send_string_cmd(&mut framed, "SET Hello 5").await?;
+
+    // send_string_cmd(&mut framed, "GET Hello").await?;
 
     Ok(())
 }
 
-async fn send_cmd(
+async fn send_string_cmd(
     framed: &mut Framed<TcpStream, Resp2>,
     cmds: &'static str,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -36,6 +48,28 @@ async fn send_cmd(
             BytesFrame::BulkString(data) => println!("Received: {:?}", data),
             BytesFrame::Error(e) => println!("Error: {}", e),
             other => println!("Received: {:?}", other),
+        }
+    }
+
+    Ok(())
+}
+
+async fn send_list_cmd(
+    framed: &mut Framed<TcpStream, Resp2>,
+    cmds: Vec<&'static str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for cmd_str in cmds {
+        let cmd = resp2_encode_command(cmd_str);
+
+        framed.send(cmd).await?;
+        // Read the response
+        if let Some(response) = framed.next().await {
+            match response? {
+                BytesFrame::Array(data) => println!("Received: {:?}", data),
+                BytesFrame::BulkString(data) => println!("Received: {:?}", data),
+                BytesFrame::Error(e) => println!("Error: {}", e),
+                other => println!("Received: {:?}", other),
+            }
         }
     }
 

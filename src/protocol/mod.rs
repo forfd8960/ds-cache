@@ -1,6 +1,7 @@
-use crate::commands::{Command, StringCommand};
+use crate::commands::{Command, ListCommand, StringCommand};
 use anyhow::{Result, anyhow};
 use redis_protocol::resp2::types::OwnedFrame as Frame;
+use tracing::info;
 
 pub mod encode;
 pub mod list;
@@ -48,19 +49,24 @@ impl From<Frame> for Command {
 pub fn from_frame(frame: Frame) -> Result<Command> {
     let args = extract_command_args(frame)?;
 
-    println!("[from_frame] args: {:?}", args);
-
+    info!("[from_frame] args: {:?}", args);
     if args.is_empty() {
         return Err(anyhow!("Empty command".to_string()));
     }
 
     let cmd_name = args[0].to_uppercase();
 
+    info!("[from_frame] cmd_name: {}", cmd_name);
+
     match cmd_name.as_str() {
         // String commands
         "GET" | "SET" | "GETSET" | "SETNX" | "SETEX" | "MGET" | "MSET" | "MSETNX" | "APPEND"
         | "STRLEN" | "INCR" | "INCRBY" | "INCRBYFLOAT" | "DECR" | "DECRBY" | "GETRANGE"
         | "SETRANGE" => Ok(Command::String(StringCommand::from_frame_args(&args)?)),
+        // List commands
+        "LPUSH" | "RPUSH" | "LPOP" | "RPOP" | "LLEN" | "LRANGE" => {
+            Ok(Command::List(ListCommand::from_frame_args(&args)?))
+        }
         _ => Ok(Command::Unknown {
             command: cmd_name,
             args: args[1..].to_vec(),

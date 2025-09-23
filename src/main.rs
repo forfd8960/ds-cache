@@ -7,13 +7,18 @@ mod server; // ds-cache server
 mod storage; // data store
 mod utils; // util functions.
 
+use crate::{config::CacheConfig, server::Server};
 use anyhow::Result;
 
-use crate::{config::CacheConfig, server::Server};
+use tracing::{info, level_filters::LevelFilter};
+use tracing_subscriber::{Layer as _, fmt::Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("A Redis Server Build with Rust");
+    let layer = Layer::new().with_filter(LevelFilter::INFO);
+    tracing_subscriber::registry().with(layer).init();
+
+    info!("A Redis Server Build with Rust");
 
     let conf = CacheConfig {
         addr: "0.0.0.0:6869".to_string(),
