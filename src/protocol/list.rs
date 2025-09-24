@@ -44,7 +44,7 @@ fn parse_rpush(args: &[String]) -> Result<ListCommand> {
 }
 
 fn parse_lpop(args: &[String]) -> Result<ListCommand> {
-    if args.len() != 3 {
+    if args.len() != 2 {
         return Err(anyhow!("LPOP requires exactly 2 argument".to_string()));
     }
 
@@ -54,7 +54,7 @@ fn parse_lpop(args: &[String]) -> Result<ListCommand> {
 }
 
 fn parse_rpop(args: &[String]) -> Result<ListCommand> {
-    if args.len() != 3 {
+    if args.len() != 2 {
         return Err(anyhow!("RPOP requires exactly 2 argument".to_string()));
     }
 

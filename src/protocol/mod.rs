@@ -1,10 +1,11 @@
-use crate::commands::{Command, ListCommand, StringCommand};
+use crate::commands::{Command, ListCommand, SetCommand, StringCommand};
 use anyhow::{Result, anyhow};
 use redis_protocol::resp2::types::OwnedFrame as Frame;
 use tracing::info;
 
 pub mod encode;
 pub mod list;
+pub mod set;
 pub mod strings;
 
 fn extract_command_args(frame: Frame) -> Result<Vec<String>> {
@@ -55,7 +56,6 @@ pub fn from_frame(frame: Frame) -> Result<Command> {
     }
 
     let cmd_name = args[0].to_uppercase();
-
     info!("[from_frame] cmd_name: {}", cmd_name);
 
     match cmd_name.as_str() {
@@ -66,6 +66,10 @@ pub fn from_frame(frame: Frame) -> Result<Command> {
         // List commands
         "LPUSH" | "RPUSH" | "LPOP" | "RPOP" | "LLEN" | "LRANGE" => {
             Ok(Command::List(ListCommand::from_frame_args(&args)?))
+        }
+        // Set commands
+        "SADD" | "SREM" | "SMEMBERS" | "SCARD" | "SISMEMBER" => {
+            Ok(Command::Set(SetCommand::from_frame_args(&args)?))
         }
         _ => Ok(Command::Unknown {
             command: cmd_name,

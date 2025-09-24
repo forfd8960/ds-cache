@@ -14,21 +14,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create framed stream with our RESP codec
     let mut framed = Framed::new(stream, Resp2::default());
 
-    send_list_cmd(
+    // send_cmds(
+    //     &mut framed,
+    //     vec![
+    //         "LPUSH mylist world",
+    //         "LPUSH mylist hello",
+    //         "LLEN mylist",
+    //         "LPOP mylist",
+    //         "LRANGE mylist 0 -1",
+    //     ],
+    // )
+    // .await?;
+
+    /*
+        Received: Integer(1)
+        Received: Integer(1)
+        Received: Integer(0)
+        Received: Integer(2)
+        Received: [BulkString(b"world"), BulkString(b"hello")]
+        Received: Integer(1)
+        Received: Integer(0)
+        Received: Integer(1)
+        Received: [BulkString(b"world")]
+    */
+    send_cmds(
         &mut framed,
         vec![
-            "LPUSH mylist world",
-            "LPUSH mylist hello",
-            "LLEN mylist",
-            "LPOP mylist",
-            "LRANGE mylist 0 -1",
+            "SADD myset hello",
+            "SADD myset world",
+            "SADD myset hello", // duplicate
+            "SCARD myset",
+            "SMEMBERS myset",
+            "SISMEMBER myset hello",
+            "SISMEMBER myset foo",
+            "SREM myset hello",
+            "SMEMBERS myset",
         ],
     )
     .await?;
-
-    // send_string_cmd(&mut framed, "SET Hello 5").await?;
-
-    // send_string_cmd(&mut framed, "GET Hello").await?;
 
     Ok(())
 }
@@ -54,7 +77,7 @@ async fn send_string_cmd(
     Ok(())
 }
 
-async fn send_list_cmd(
+async fn send_cmds(
     framed: &mut Framed<TcpStream, Resp2>,
     cmds: Vec<&'static str>,
 ) -> Result<(), Box<dyn std::error::Error>> {

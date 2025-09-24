@@ -1,5 +1,6 @@
 pub mod handlers;
 pub mod list;
+pub mod set;
 pub mod string;
 
 #[derive(Debug, Clone, PartialEq)]

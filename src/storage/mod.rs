@@ -378,6 +378,129 @@ impl CacheStore {
         }
     }
 
+    // ------- Set Value Methods -------
+    pub fn sadd(&mut self, key: &str, members: Vec<String>) -> usize {
+        let set_value = match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => {
+                match &mut entry.value {
+                    Value::Set(set) => set,
+                    _ => {
+                        // Key exists but is not a set - overwrite with new set
+                        let new_set = SetValue {
+                            members: HashSet::new(),
+                            encoding: SetEncoding::HashTable,
+                        };
+                        entry.value = Value::Set(new_set);
+                        match &mut entry.value {
+                            Value::Set(set) => set,
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            }
+            Some(_) => {
+                // Key exists but is expired - remove it and create new set
+                self.data.remove(key);
+                let new_set = SetValue {
+                    members: HashSet::new(),
+                    encoding: SetEncoding::HashTable,
+                };
+                let entry = Entry::new(Value::Set(new_set));
+                self.data.insert(key.to_string(), entry);
+                match &mut self.data.get_mut(key).unwrap().value {
+                    Value::Set(set) => set,
+                    _ => unreachable!(),
+                }
+            }
+            None => {
+                // Key does not exist - create new set
+                let new_set = SetValue {
+                    members: HashSet::new(),
+                    encoding: SetEncoding::HashTable,
+                };
+                let entry = Entry::new(Value::Set(new_set));
+                self.data.insert(key.to_string(), entry);
+                match &mut self.data.get_mut(key).unwrap().value {
+                    Value::Set(set) => set,
+                    _ => unreachable!(),
+                }
+            }
+        };
+
+        let initial_size = set_value.members.len();
+        for member in members {
+            set_value.members.insert(member.into_bytes());
+        }
+
+        set_value.members.len() - initial_size
+    }
+
+    pub fn srem(&mut self, key: &str, members: Vec<String>) -> usize {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &mut entry.value {
+                Value::Set(set) => {
+                    let initial_size = set.members.len();
+                    for member in members {
+                        set.members.remove(&member.into_bytes());
+                    }
+                    initial_size - set.members.len()
+                }
+                _ => 0, // Key exists but is not a set
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                0
+            }
+            None => 0, // Key does not exist
+        }
+    }
+
+    pub fn smembers(&mut self, key: &str) -> Option<HashSet<Vec<u8>>> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::Set(set) => Some(set.members.clone()),
+                _ => None, // Key exists but is not a set
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
+
+    pub fn scard(&mut self, key: &str) -> Option<usize> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::Set(set) => Some(set.members.len()),
+                _ => None, // Key exists but is not a set
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
+
+    pub fn s_ismember(&mut self, key: &str, member: &str) -> Option<bool> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::Set(set) => Some(set.members.contains(&member.as_bytes().to_vec())),
+                _ => None, // Key exists but is not a set
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
+
     // Set value with expiration
     pub fn set_with_expiration(&mut self, key: String, value: Value, ttl: Duration) {
         let entry = Entry::with_expiration(value, ttl);
