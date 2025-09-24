@@ -1,4 +1,4 @@
-use crate::storage::{ListValue, SetValue, StringValue, Value};
+use crate::storage::{HashValue, ListValue, SetValue, StringValue, Value};
 
 use anyhow::{Result, anyhow};
 use redis_protocol::resp2::types::BytesFrame;
@@ -8,6 +8,7 @@ pub fn encode_value(value: Value) -> Result<BytesFrame> {
         Value::String(v) => encode_string(v),
         Value::List(v) => encode_list(v),
         Value::Set(v) => encode_set(v),
+        Value::Hash(v) => encode_hash(v),
         _ => Err(anyhow!("{:?} not supported", value)),
     }
 }
@@ -36,10 +37,23 @@ fn encode_set(set_v: SetValue) -> Result<BytesFrame> {
     ))
 }
 
+fn encode_hash(hash_v: HashValue) -> Result<BytesFrame> {
+    let mut arr = Vec::with_capacity(hash_v.fields.len() * 2);
+    for (k, v) in hash_v.fields {
+        arr.push(BytesFrame::BulkString(k.into()));
+        arr.push(BytesFrame::BulkString(v.into()));
+    }
+    Ok(BytesFrame::Array(arr))
+}
+
 pub fn encode_integer(v: i64) -> Result<BytesFrame> {
     Ok(BytesFrame::Integer(v))
 }
 
 pub fn encode_error(err_msg: &str) -> Result<BytesFrame> {
     Ok(BytesFrame::Error(err_msg.into()))
+}
+
+pub fn encode_nil() -> Result<BytesFrame> {
+    Ok(BytesFrame::Null)
 }

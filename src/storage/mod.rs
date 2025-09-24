@@ -15,6 +15,7 @@ pub enum Value {
     Set(SetValue),
     SortedSet(SortedSetValue),
     Hash(HashValue),
+    Nil,
 }
 
 // ========== String Value ==========
@@ -501,6 +502,212 @@ impl CacheStore {
         }
     }
 
+    // ------- Hash Value Methods -------
+    pub fn hset(&mut self, key: &str, pairs: Vec<(String, String)>) -> usize {
+        let hash_value = match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => {
+                match &mut entry.value {
+                    Value::Hash(hash) => hash,
+                    _ => {
+                        // Key exists but is not a hash - overwrite with new hash
+                        let new_hash = HashValue {
+                            fields: HashMap::new(),
+                            encoding: HashEncoding::HashTable,
+                        };
+                        entry.value = Value::Hash(new_hash);
+                        match &mut entry.value {
+                            Value::Hash(hash) => hash,
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            }
+            Some(_) => {
+                // Key exists but is expired - remove it and create new hash
+                self.data.remove(key);
+                let new_hash = HashValue {
+                    fields: HashMap::new(),
+                    encoding: HashEncoding::HashTable,
+                };
+                let entry = Entry::new(Value::Hash(new_hash));
+                self.data.insert(key.to_string(), entry);
+                match &mut self.data.get_mut(key).unwrap().value {
+                    Value::Hash(hash) => hash,
+                    _ => unreachable!(),
+                }
+            }
+            None => {
+                // Key does not exist - create new hash
+                let new_hash = HashValue {
+                    fields: HashMap::new(),
+                    encoding: HashEncoding::HashTable,
+                };
+
+                let entry = Entry::new(Value::Hash(new_hash));
+                self.data.insert(key.to_string(), entry);
+                match &mut self.data.get_mut(key).unwrap().value {
+                    Value::Hash(hash) => hash,
+                    _ => unreachable!(),
+                }
+            }
+        };
+
+        let mut sz = 0 as usize;
+        for (field, value) in pairs {
+            let key_bs = field.into_bytes();
+            let key = &key_bs;
+
+            if !hash_value.fields.contains_key(key) {
+                sz += 1;
+            }
+            hash_value.fields.insert(key_bs, value.into_bytes());
+        }
+
+        sz
+    }
+
+    pub fn hget(&mut self, key: &str, field: &str) -> Option<Vec<u8>> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::Hash(hash) => hash.fields.get(field.as_bytes()).cloned(),
+                _ => None, // Key exists but is not a hash
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
+
+    pub fn hdel(&mut self, key: &str, fields: &[String]) -> usize {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &mut entry.value {
+                Value::Hash(hash) => {
+                    let initial_size = hash.fields.len();
+                    for field in fields {
+                        hash.fields.remove(field.as_bytes());
+                    }
+                    initial_size - hash.fields.len()
+                }
+                _ => 0, // Key exists but is not a hash
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                0
+            }
+            None => 0, // Key does not exist
+        }
+    }
+
+    pub fn hmset(&mut self, key: &str, pairs: &[(String, String)]) -> usize {
+        self.hset(key, pairs.to_vec())
+    }
+
+    pub fn hmget(&mut self, key: &str, fields: &[String]) -> Option<Vec<Option<Vec<u8>>>> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::Hash(hash) => {
+                    let mut values = Vec::with_capacity(fields.len());
+                    for field in fields {
+                        values.push(hash.fields.get(field.as_bytes()).cloned());
+                    }
+                    Some(values)
+                }
+                _ => None, // Key exists but is not a hash
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
+
+    pub fn hexists(&mut self, key: &str, field: &str) -> bool {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::Hash(hash) => hash.fields.contains_key(field.as_bytes()),
+                _ => false, // Key exists but is not a hash
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                false
+            }
+            None => false, // Key does not exist
+        }
+    }
+
+    pub fn hlen(&mut self, key: &str) -> usize {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::Hash(hash) => hash.fields.len(),
+                _ => 0, // Key exists but is not a hash
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                0
+            }
+            None => 0, // Key does not exist
+        }
+    }
+
+    pub fn hkeys(&mut self, key: &str) -> Option<Vec<Vec<u8>>> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::Hash(hash) => Some(hash.fields.keys().cloned().collect()),
+                _ => None, // Key exists but is not a hash
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
+
+    pub fn hvals(&mut self, key: &str) -> Option<Vec<Vec<u8>>> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::Hash(hash) => Some(hash.fields.values().cloned().collect()),
+                _ => None, // Key exists but is not a hash
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
+
+    pub fn hgetall(&mut self, key: &str) -> Option<HashMap<Vec<u8>, Vec<u8>>> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::Hash(hash) => {
+                    let mut map = HashMap::new();
+                    for (k, v) in &hash.fields {
+                        map.insert(k.clone(), v.clone());
+                    }
+                    Some(map)
+                }
+                _ => None, // Key exists but is not a hash
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
+
     // Set value with expiration
     pub fn set_with_expiration(&mut self, key: String, value: Value, ttl: Duration) {
         let entry = Entry::with_expiration(value, ttl);
@@ -533,6 +740,7 @@ impl CacheStore {
             Value::Set(_) => "set",
             Value::SortedSet(_) => "zset",
             Value::Hash(_) => "hash",
+            Value::Nil => "nil",
         })
     }
 

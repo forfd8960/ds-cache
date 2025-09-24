@@ -1,9 +1,10 @@
-use crate::commands::{Command, ListCommand, SetCommand, StringCommand};
+use crate::commands::{Command, HashCommand, ListCommand, SetCommand, StringCommand};
 use anyhow::{Result, anyhow};
 use redis_protocol::resp2::types::OwnedFrame as Frame;
 use tracing::info;
 
 pub mod encode;
+pub mod hash;
 pub mod list;
 pub mod set;
 pub mod strings;
@@ -71,6 +72,11 @@ pub fn from_frame(frame: Frame) -> Result<Command> {
         "SADD" | "SREM" | "SMEMBERS" | "SCARD" | "SISMEMBER" => {
             Ok(Command::Set(SetCommand::from_frame_args(&args)?))
         }
+        // Hash commands
+        "HSET" | "HGET" | "HDEL" | "HGETALL" | "HLEN" | "HMSET" | "HMGET" | "HEXISTS" | "HKEYS"
+        | "HVALS" => Ok(Command::Hash(HashCommand::from_frame_args(&args)?)),
+
+        // Unknown command
         _ => Ok(Command::Unknown {
             command: cmd_name,
             args: args[1..].to_vec(),

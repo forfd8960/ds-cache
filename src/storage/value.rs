@@ -35,6 +35,7 @@ impl Value {
                     .sum::<usize>()
                     + std::mem::size_of::<HashValue>()
             }
+            Value::Nil => 0,
         }
     }
 
@@ -46,6 +47,7 @@ impl Value {
             Value::Set(s) => s.members.is_empty(),
             Value::SortedSet(zs) => zs.members.is_empty(),
             Value::Hash(h) => h.fields.is_empty(),
+            Value::Nil => true,
         }
     }
 }
