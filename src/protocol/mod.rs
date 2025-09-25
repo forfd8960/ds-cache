@@ -1,4 +1,6 @@
-use crate::commands::{Command, HashCommand, ListCommand, SetCommand, StringCommand};
+use crate::commands::{
+    Command, HashCommand, ListCommand, SetCommand, SortedSetCommand, StringCommand,
+};
 use anyhow::{Result, anyhow};
 use redis_protocol::resp2::types::OwnedFrame as Frame;
 use tracing::info;
@@ -7,6 +9,7 @@ pub mod encode;
 pub mod hash;
 pub mod list;
 pub mod set;
+pub mod sorted_set;
 pub mod strings;
 
 fn extract_command_args(frame: Frame) -> Result<Vec<String>> {
@@ -75,6 +78,11 @@ pub fn from_frame(frame: Frame) -> Result<Command> {
         // Hash commands
         "HSET" | "HGET" | "HDEL" | "HGETALL" | "HLEN" | "HMSET" | "HMGET" | "HEXISTS" | "HKEYS"
         | "HVALS" => Ok(Command::Hash(HashCommand::from_frame_args(&args)?)),
+
+        // Sorted Set commands
+        "ZADD" | "ZREM" | "ZRANGE" | "ZCARD" | "ZSCORE" => Ok(Command::SortedSet(
+            SortedSetCommand::from_frame_args(&args)?,
+        )),
 
         // Unknown command
         _ => Ok(Command::Unknown {

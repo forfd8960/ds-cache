@@ -19,48 +19,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create framed stream with our RESP codec
     let mut framed = Framed::new(stream, Resp2::default());
 
-    // send_cmds(
-    //     &mut framed,
-    //     vec![
-    //         "LPUSH mylist world",
-    //         "LPUSH mylist hello",
-    //         "LLEN mylist",
-    //         "LPOP mylist",
-    //         "LRANGE mylist 0 -1",
-    //     ],
-    // )
-    // .await?;
+    send_sorted_set_cmds(&mut framed).await?;
 
-    /*
-        Received: Integer(1)
-        Received: Integer(1)
-        Received: Integer(0)
-        Received: Integer(2)
-        Received: [BulkString(b"world"), BulkString(b"hello")]
-        Received: Integer(1)
-        Received: Integer(0)
-        Received: Integer(1)
-        Received: [BulkString(b"world")]
-    */
-    // send_cmds(
-    //     &mut framed,
-    //     vec![
-    //         "SADD myset hello",
-    //         "SADD myset world",
-    //         "SADD myset hello", // duplicate
-    //         "SCARD myset",
-    //         "SMEMBERS myset",
-    //         "SISMEMBER myset hello",
-    //         "SISMEMBER myset foo",
-    //         "SREM myset hello",
-    //         "SMEMBERS myset",
-    //     ],
-    // )
-    // .await?;
+    Ok(())
+}
 
-    // Send hash commands
+async fn send_set_cmds(
+    framed: &mut Framed<TcpStream, Resp2>,
+) -> Result<(), Box<dyn std::error::Error>> {
     send_cmds(
-        &mut framed,
+        framed,
+        vec![
+            "SADD myset hello",
+            "SADD myset world",
+            "SADD myset hello", // duplicate
+            "SCARD myset",
+            "SMEMBERS myset",
+            "SISMEMBER myset hello",
+            "SISMEMBER myset foo",
+            "SREM myset hello",
+            "SMEMBERS myset",
+        ],
+    )
+    .await?;
+    Ok(())
+}
+
+async fn send_hash_cmds(
+    framed: &mut Framed<TcpStream, Resp2>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    send_cmds(
+        framed,
         vec![
             "HSET myhash field1 value1",
             "HSET myhash field2 value2",
@@ -84,24 +73,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn send_string_cmd(
+async fn send_sorted_set_cmds(
     framed: &mut Framed<TcpStream, Resp2>,
-    cmds: &'static str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let cmd = resp2_encode_command(cmds);
-
-    framed.send(cmd.clone()).await?;
-
-    // Read the response
-    if let Some(response) = framed.next().await {
-        match response? {
-            BytesFrame::SimpleString(data) => info!("Cmd: {:?}, Received: {:?}", cmd, data),
-            BytesFrame::BulkString(data) => info!("Cmd: {:?}, Received: {:?}", cmd, data),
-            BytesFrame::Error(e) => info!("Error: {}", e),
-            other => info!("Received: {:?}", other),
-        }
-    }
-
+    send_cmds(
+        framed,
+        vec![
+            "ZADD myzset 1 one",
+            "ZADD myzset 2 two",
+            "ZADD myzset 3 three",
+            "ZCARD myzset",
+            "ZRANGE myzset 0 -1 WITHSCORES",
+            "ZRANGE myzset 0 1",
+            "ZREM myzset two",
+            "ZRANGE myzset 0 -1 WITHSCORES",
+        ],
+    )
+    .await?;
     Ok(())
 }
 

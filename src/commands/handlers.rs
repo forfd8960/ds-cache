@@ -1,6 +1,9 @@
 use super::{Command, StringCommand};
 use crate::{
-    commands::{hash::HashHandler, list::ListHandler, set::SetHandler, string::StringHandler},
+    commands::{
+        hash::HashHandler, list::ListHandler, set::SetHandler, sorted_set::SortedSetHandler,
+        string::StringHandler,
+    },
     storage::CacheStore,
 };
 use std::sync::Arc;
@@ -14,6 +17,7 @@ pub struct CmdHandler {
     pub list_handler: ListHandler,
     pub set_handler: SetHandler,
     pub hash_handler: HashHandler,
+    pub sorted_set_handler: SortedSetHandler,
 }
 
 impl CmdHandler {
@@ -23,6 +27,7 @@ impl CmdHandler {
             list_handler: ListHandler::new(store.clone()),
             set_handler: SetHandler::new(store.clone()),
             hash_handler: HashHandler::new(store.clone()),
+            sorted_set_handler: SortedSetHandler::new(store.clone()),
         }
     }
 
@@ -34,6 +39,7 @@ impl CmdHandler {
             Command::List(l_cmd) => self.list_handler.handle_cmd(l_cmd).await,
             Command::Set(set_cmd) => self.set_handler.handle_cmd(set_cmd).await,
             Command::Hash(hash_cmd) => self.hash_handler.handle_cmd(hash_cmd).await,
+            Command::SortedSet(ss_cmd) => self.sorted_set_handler.handle_cmd(ss_cmd).await,
             _ => Err(anyhow!("unknown command")),
         }
     }

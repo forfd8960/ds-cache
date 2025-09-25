@@ -57,3 +57,12 @@ pub fn encode_error(err_msg: &str) -> Result<BytesFrame> {
 pub fn encode_nil() -> Result<BytesFrame> {
     Ok(BytesFrame::Null)
 }
+
+pub fn encode_sorted_set(sorted_set: Vec<(String, f64)>) -> Result<BytesFrame> {
+    let mut arr = Vec::with_capacity(sorted_set.len() * 2);
+    for (member, score) in sorted_set {
+        arr.push(BytesFrame::BulkString(member.into()));
+        arr.push(BytesFrame::BulkString(score.to_string().into()));
+    }
+    Ok(BytesFrame::Array(arr))
+}

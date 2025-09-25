@@ -1,6 +1,7 @@
 pub mod entry;
 pub mod value;
 
+use crate::commands::ZRangeOptions;
 use crate::storage::entry::Entry;
 
 use std::{
@@ -708,6 +709,165 @@ impl CacheStore {
         }
     }
 
+    // -------- Sorted Set Value Methods -------
+    pub fn zadd(&mut self, key: &str, members: Vec<(f64, String)>) -> usize {
+        let zset_value = match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => {
+                match &mut entry.value {
+                    Value::SortedSet(zset) => zset,
+                    _ => {
+                        // Key exists but is not a sorted set - overwrite with new sorted set
+                        entry.value = Value::SortedSet(SortedSetValue::new());
+                        match &mut entry.value {
+                            Value::SortedSet(zset) => zset,
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            }
+            Some(_) => {
+                // Key exists but is expired - remove it and create new sorted set
+                self.data.remove(key);
+                let entry = Entry::new(Value::SortedSet(SortedSetValue::new()));
+                self.data.insert(key.to_string(), entry);
+                match &mut self.data.get_mut(key).unwrap().value {
+                    Value::SortedSet(zset) => zset,
+                    _ => unreachable!(),
+                }
+            }
+            None => {
+                // Key does not exist - create new sorted set
+                let entry = Entry::new(Value::SortedSet(SortedSetValue::new()));
+                self.data.insert(key.to_string(), entry);
+                match &mut self.data.get_mut(key).unwrap().value {
+                    Value::SortedSet(zset) => zset,
+                    _ => unreachable!(),
+                }
+            }
+        };
+        let mut added = 0;
+        for (score, member) in members {
+            let member_bytes = member.into_bytes();
+            let of_score = OrderedFloat::from(score);
+            let exists = zset_value.member_scores.contains_key(&member_bytes);
+            if !exists {
+                zset_value.members.insert(of_score, member_bytes.clone());
+                zset_value.member_scores.insert(member_bytes, of_score);
+                added += 1;
+            }
+        }
+        added
+    }
+
+    pub fn zrem(&mut self, key: &str, members: Vec<String>) -> usize {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &mut entry.value {
+                Value::SortedSet(zset) => {
+                    let mut removed = 0;
+                    for member in members {
+                        let member_bytes = member.into_bytes();
+                        if let Some(score) = zset.member_scores.remove(&member_bytes) {
+                            zset.members.remove(&score);
+                            removed += 1;
+                        }
+                    }
+                    removed
+                }
+                _ => 0, // Key exists but is not a sorted set
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                0
+            }
+            None => 0, // Key does not exist
+        }
+    }
+
+    pub fn zrange(
+        &mut self,
+        key: &str,
+        start: i64,
+        stop: i64,
+        options: ZRangeOptions,
+    ) -> Option<Vec<(String, f64)>> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::SortedSet(zset) => {
+                    let len = zset.members.len() as i64;
+
+                    let start_idx = if start < 0 {
+                        (len + start).max(0)
+                    } else {
+                        start.min(len)
+                    } as usize;
+
+                    let stop_idx = if stop < 0 {
+                        (len + stop + 1).max(0)
+                    } else {
+                        (stop + 1).min(len)
+                    } as usize;
+
+                    if start_idx >= stop_idx || start_idx >= zset.members.len() {
+                        return Some(vec![]);
+                    }
+
+                    let range_iter = zset
+                        .members
+                        .iter()
+                        .skip(start_idx)
+                        .take(stop_idx - start_idx);
+
+                    let mut result = Vec::new();
+                    for (score, member) in range_iter {
+                        if options.with_scores {
+                            result.push((String::from_utf8_lossy(member).to_string(), score.0));
+                        } else {
+                            result.push((String::from_utf8_lossy(member).to_string(), 0.0));
+                        }
+                    }
+                    Some(result)
+                }
+                _ => None, // Key exists but is not a sorted set
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
+
+    pub fn zcard(&mut self, key: &str) -> usize {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::SortedSet(zset) => zset.members.len(),
+                _ => 0, // Key exists but is not a sorted set
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                0
+            }
+            None => 0, // Key does not exist
+        }
+    }
+
+    pub fn zscore(&mut self, key: &str, member: &str) -> Option<f64> {
+        match self.data.get_mut(key) {
+            Some(entry) if !entry.is_expired() => match &entry.value {
+                Value::SortedSet(zset) => zset.member_scores.get(member.as_bytes()).map(|of| of.0),
+                _ => None, // Key exists but is not a sorted set
+            },
+            Some(_) => {
+                // Key exists but is expired - remove it
+                self.data.remove(key);
+                None
+            }
+            None => None, // Key does not exist
+        }
+    }
     // Set value with expiration
     pub fn set_with_expiration(&mut self, key: String, value: Value, ttl: Duration) {
         let entry = Entry::with_expiration(value, ttl);
