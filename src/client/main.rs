@@ -19,8 +19,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create framed stream with our RESP codec
     let mut framed = Framed::new(stream, Resp2::default());
 
-    send_basic_cmds(&mut framed).await?;
+    send_ttl_to_key(&mut framed).await?;
 
+    Ok(())
+}
+
+async fn send_ttl_to_key(
+    framed: &mut Framed<TcpStream, Resp2>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    send_cmds(framed, vec!["TTL anotherkey", "TYPE anotherkey"]).await?;
+    Ok(())
+}
+
+async fn send_string_cmds(
+    framed: &mut Framed<TcpStream, Resp2>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    send_cmds(
+        framed,
+        vec![
+            "SET mykey myvalue",
+            "GET mykey",
+            "SET anotherkey anothervalue EX 600 NX GET",
+            "GET anotherkey",
+            "MSET key1 value1 key2 value2",
+            "MGET key1 key2 key3", // key3 does not exist
+        ],
+    )
+    .await?;
     Ok(())
 }
 
@@ -57,10 +82,11 @@ async fn send_basic_cmds(
             "LPUSH mylist value1 value2",
             "ZADD myzset 1 one 2 two 3 three",
             "PING",
-            "PING Hello, World!",
-            "ECHO Hello, Echo!",
+            "PING Hello,World!",
+            "ECHO Hello,Echo!",
             "EXISTS mykey myset myhash mylist myzset",
             "TYPE mylist",
+            "KEYS my*",
         ],
     )
     .await?;

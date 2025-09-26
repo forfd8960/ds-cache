@@ -49,15 +49,6 @@ pub enum StringCommand {
         key: String,
         value: String,
     },
-    SetNx {
-        key: String,
-        value: String,
-    },
-    SetEx {
-        key: String,
-        seconds: u64,
-        value: String,
-    },
     MGet {
         keys: Vec<String>,
     },
@@ -438,6 +429,16 @@ pub enum HashCommand {
 }
 
 // ========== String Options ==========
+/*
+EX seconds -- Set the specified expire time, in seconds (a positive integer).
+PX milliseconds -- Set the specified expire time, in milliseconds (a positive integer).
+EXAT timestamp-seconds -- Set the specified Unix time at which the key will expire, in seconds (a positive integer).
+PXAT timestamp-milliseconds -- Set the specified Unix time at which the key will expire, in milliseconds (a positive integer).
+NX -- Only set the key if it does not already exist.
+XX -- Only set the key if it already exists.
+KEEPTTL -- Retain the time to live associated with the key.
+GET -- Return the old string stored at key, or nil if key did not exist. An error is returned and SET aborted if the value stored at key is not a string.
+*/
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SetOptions {
     pub expire: Option<SetExpire>,

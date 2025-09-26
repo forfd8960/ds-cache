@@ -27,7 +27,6 @@ impl BasicCmdHandler {
             BasicCommand::TTL { key } => self.handle_ttl(key).await,
             BasicCommand::Keys { pattern } => self.handle_keys(pattern).await,
             BasicCommand::Type { key } => self.handle_type(key).await,
-            _ => encode_error("unknown command"),
         }
     }
 

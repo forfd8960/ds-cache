@@ -9,6 +9,7 @@ pub fn encode_value(value: Value) -> Result<BytesFrame> {
         Value::List(v) => encode_list(v),
         Value::Set(v) => encode_set(v),
         Value::Hash(v) => encode_hash(v),
+        Value::Nil => encode_nil(),
         _ => Err(anyhow!("{:?} not supported", value)),
     }
 }

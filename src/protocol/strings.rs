@@ -13,8 +13,6 @@ impl StringCommand {
             "GET" => parse_get(args),
             "SET" => parse_set(args),
             "GETSET" => parse_getset(args),
-            "SETNX" => parse_setnx(args),
-            "SETEX" => parse_setex(args),
             "MGET" => parse_mget(args),
             "MSET" => parse_mset(args),
             "MSETNX" => parse_msetnx(args),
@@ -133,33 +131,6 @@ fn parse_getset(args: &[String]) -> Result<StringCommand> {
     Ok(StringCommand::GetSet {
         key: args[1].clone(),
         value: args[2].clone(),
-    })
-}
-
-fn parse_setnx(args: &[String]) -> Result<StringCommand> {
-    if args.len() != 3 {
-        return Err(anyhow!("SETNX requires exactly 2 arguments".to_string()));
-    }
-
-    Ok(StringCommand::SetNx {
-        key: args[1].clone(),
-        value: args[2].clone(),
-    })
-}
-
-fn parse_setex(args: &[String]) -> Result<StringCommand> {
-    if args.len() != 4 {
-        return Err(anyhow!("SETEX requires exactly 3 arguments".to_string()));
-    }
-
-    let seconds = args[2]
-        .parse::<u64>()
-        .map_err(|_| anyhow!("Invalid seconds value for SETEX".to_string()))?;
-
-    Ok(StringCommand::SetEx {
-        key: args[1].clone(),
-        seconds,
-        value: args[3].clone(),
     })
 }
 

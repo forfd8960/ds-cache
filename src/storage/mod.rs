@@ -1,9 +1,10 @@
 pub mod entry;
 pub mod value;
 
+use anyhow::{Result, anyhow};
 use regex::Regex;
 
-use crate::commands::ZRangeOptions;
+use crate::commands::{SetCondition, SetExpire, SetOptions, ZRangeOptions};
 use crate::storage::entry::Entry;
 
 use std::{
@@ -155,9 +156,76 @@ impl CacheStore {
     }
 
     // Set value without expiration
-    pub fn set(&mut self, key: String, value: Value) {
-        let entry = Entry::new(value);
-        self.data.insert(key, entry);
+    pub fn set(&mut self, key: String, value: Value, opts: SetOptions) -> Result<Option<Value>> {
+        // Return the old string stored at key, or nil if key did not exist. An error is returned and SET aborted if the value stored at key is not a string.
+        let mut old_str: Option<Value> = None;
+        let mut entry = Entry::new(value);
+
+        // Handle expiration options
+        if opts.get {
+            if let Some(existing_entry) = self.data.get(key.as_str()) {
+                if let Value::String(existing_value) = &existing_entry.value {
+                    old_str = Some(Value::String(existing_value.clone()));
+                } else {
+                    return Err(anyhow!(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value"
+                    ));
+                }
+            } else {
+                old_str = Some(Value::Nil);
+            }
+        }
+
+        if let Some(cond) = opts.condition {
+            match cond {
+                // NX: Only set if key does not exist
+                SetCondition::Nx => {
+                    if self.data.contains_key(&key) {
+                        return Ok(None); // Key exists, do not set
+                    }
+                }
+                // XX: Only set if key exists
+                SetCondition::Xx => {
+                    if !self.data.contains_key(&key) {
+                        return Ok(None); // Key does not exist, do not set
+                    }
+                }
+            }
+        }
+        if let Some(expire) = opts.expire {
+            match expire {
+                SetExpire::Ex(seconds) => {
+                    entry.set_expiration(Duration::from_secs(seconds));
+                }
+                SetExpire::Px(milliseconds) => {
+                    entry.set_expiration(Duration::from_millis(milliseconds));
+                }
+                SetExpire::ExAt(timestamp_secs) => {
+                    let now = Instant::now();
+                    let expire_time = Duration::from_secs(timestamp_secs)
+                        .checked_sub(now.elapsed())
+                        .unwrap_or(Duration::ZERO);
+                    entry.set_expiration(expire_time);
+                }
+                SetExpire::PxAt(timestamp_millis) => {
+                    let now = Instant::now();
+                    let expire_time = Duration::from_millis(timestamp_millis)
+                        .checked_sub(now.elapsed())
+                        .unwrap_or(Duration::ZERO);
+                    entry.set_expiration(expire_time);
+                }
+                SetExpire::KeepTtl => {
+                    if let Some(existing_entry) = self.data.get(key.as_str()) {
+                        if let Some(ttl) = existing_entry.ttl() {
+                            entry.set_expiration(ttl);
+                        }
+                    }
+                }
+            }
+        }
+
+        self.data.insert(key.clone(), entry);
+        Ok(old_str)
     }
 
     pub fn lpush(&mut self, key: &str, values: Vec<String>) -> usize {
