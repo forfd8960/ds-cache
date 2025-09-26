@@ -1,10 +1,11 @@
 use crate::commands::{
-    Command, HashCommand, ListCommand, SetCommand, SortedSetCommand, StringCommand,
+    BasicCommand, Command, HashCommand, ListCommand, SetCommand, SortedSetCommand, StringCommand,
 };
 use anyhow::{Result, anyhow};
 use redis_protocol::resp2::types::OwnedFrame as Frame;
 use tracing::info;
 
+pub mod basic;
 pub mod encode;
 pub mod hash;
 pub mod list;
@@ -83,6 +84,11 @@ pub fn from_frame(frame: Frame) -> Result<Command> {
         "ZADD" | "ZREM" | "ZRANGE" | "ZCARD" | "ZSCORE" => Ok(Command::SortedSet(
             SortedSetCommand::from_frame_args(&args)?,
         )),
+
+        // Basic commands
+        "PING" | "EXPIRE" | "TTL" | "ECHO" | "DEL" | "EXISTS" | "KEYS" | "TYPE" => {
+            Ok(Command::Basic(BasicCommand::from_frame_args(&args)?))
+        }
 
         // Unknown command
         _ => Ok(Command::Unknown {

@@ -1,12 +1,14 @@
 pub mod entry;
 pub mod value;
 
+use regex::Regex;
+
 use crate::commands::ZRangeOptions;
 use crate::storage::entry::Entry;
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -875,21 +877,30 @@ impl CacheStore {
     }
 
     // Delete key
-    pub fn delete(&mut self, key: &str) -> bool {
-        self.data.remove(key).is_some()
+    pub fn delete(&mut self, keys: Vec<String>) -> usize {
+        let mut deleted = 0;
+        for key in keys {
+            if self.data.remove(&key).is_some() {
+                deleted += 1;
+            }
+        }
+        deleted
     }
 
     // Check if key exists (and is not expired)
-    pub fn exists(&mut self, key: &str) -> bool {
-        match self.data.get(key) {
-            Some(entry) if !entry.is_expired() => true,
-            Some(_) => {
-                // Key exists but is expired - remove it
-                self.data.remove(key);
-                false
+    pub fn exists(&mut self, keys: Vec<String>) -> usize {
+        let mut count = 0;
+        for key in keys {
+            if let Some(entry) = self.data.get_mut(&key) {
+                if !entry.is_expired() {
+                    count += 1;
+                } else {
+                    // Key is expired - remove it
+                    self.data.remove(&key);
+                }
             }
-            None => false,
         }
+        count
     }
 
     // Get key type
@@ -937,15 +948,48 @@ impl CacheStore {
     }
 
     // Get TTL for key
-    pub fn ttl(&mut self, key: &str) -> Option<Duration> {
+    pub fn ttl(&mut self, key: &str) -> (Duration, i8) {
         match self.data.get(key) {
-            Some(entry) if !entry.is_expired() => entry.ttl(),
+            Some(entry) if !entry.is_expired() => {
+                let now = Instant::now();
+                let exp = entry.expires_at.unwrap();
+                if exp > now {
+                    (exp - now, 1) // true indicates key exists and has expiration
+                } else {
+                    (Duration::ZERO, 0) // expired
+                }
+            }
             Some(_) => {
                 // Key exists but is expired - remove it
                 self.data.remove(key);
-                None
+                (Duration::ZERO, -1)
             }
-            None => None,
+            None => (Duration::ZERO, -2), // Key does not exist
         }
+    }
+
+    pub fn keys(&mut self, pattern: &str) -> Vec<String> {
+        let regex_pattern = format!(
+            "^{}$",
+            regex::escape(pattern)
+                .replace(r"\*", ".*")
+                .replace(r"\?", ".")
+        );
+        let regex = Regex::new(&regex_pattern).unwrap();
+
+        self.data
+            .iter()
+            .filter_map(|(key, entry)| {
+                if !entry.is_expired() && regex.is_match(key) {
+                    Some(key.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn type_of(&mut self, key: &str) -> Option<&'static str> {
+        self.key_type(key)
     }
 }

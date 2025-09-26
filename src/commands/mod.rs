@@ -1,3 +1,4 @@
+pub mod basic;
 pub mod handlers;
 pub mod hash;
 pub mod list;
@@ -15,15 +16,22 @@ pub enum Command {
     Hash(HashCommand),
 
     // Basic server operations
+    Basic(BasicCommand),
+
+    // Unknown command fallback
+    Unknown { command: String, args: Vec<String> },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BasicCommand {
     Ping { message: Option<String> },
+    Expire { key: String, seconds: u64 },
+    TTL { key: String },
     Echo { message: String },
     Del { keys: Vec<String> },
     Exists { keys: Vec<String> },
     Keys { pattern: String },
     Type { key: String },
-
-    // Unknown command fallback
-    Unknown { command: String, args: Vec<String> },
 }
 
 // ========== String Commands ==========
